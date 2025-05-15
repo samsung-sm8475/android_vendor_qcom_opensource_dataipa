@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 /*
@@ -2213,7 +2212,6 @@ static int handle3_ingress_format_v2(struct net_device *dev,
 
 			if (rc == -EFAULT) {
 				IPAWANERR("Failed to setup wan/coal cons pipes\n");
-				mutex_unlock(&rmnet_ipa3_ctx->pipe_handle_guard);
 				return rc;
 			}
 
@@ -3944,7 +3942,7 @@ static int ipa3_lcl_mdm_ssr_notifier_cb(struct notifier_block *this,
 		atomic_set(&rmnet_ipa3_ctx->is_ssr, 1);
 		ipa3_q6_pre_shutdown_cleanup();
 		if (IPA_NETDEV())
-			netif_device_detach(IPA_NETDEV());
+			netif_stop_queue(IPA_NETDEV());
 		ipa3_qmi_stop_workqueues();
 		ipa3_wan_ioctl_stop_qmi_messages();
 		ipa_stop_polling_stats();
@@ -4437,8 +4435,7 @@ static int rmnet_ipa3_set_data_quota_wifi(struct wan_ioctl_set_data_quota *data)
 		  data->interface_name, (unsigned long) data->quota_mbytes);
 
 	if (ipa3_ctx_get_type(IPA_HW_TYPE) >= IPA_HW_v4_5 &&
-		ipa3_ctx_get_type(IPA_HW_TYPE) != IPA_HW_v4_11 &&
-		ipa3_ctx_get_type(IPA_HW_TYPE) != IPA_HW_v5_2) {
+		ipa3_ctx_get_type(IPA_HW_TYPE) != IPA_HW_v4_11) {
 		IPADBG("use ipa-uc for quota\n");
 		rc = ipa3_uc_quota_monitor(data->set_quota);
 	} else {
@@ -5655,9 +5652,7 @@ void ipa3_q6_handshake_complete(bool ssr_bootup)
 
 	ipa3_set_modem_up(true);
 	if (ipa3_ctx->ipa_config_is_mhi)
-		ipa_send_mhi_ctrl_endp_ind_to_modem();
-
-	IPAWANDBG("Q6 handshake complete\n");
+		ipa_send_mhi_endp_ind_to_modem();
 }
 
 static inline bool rmnet_ipa3_check_any_client_inited

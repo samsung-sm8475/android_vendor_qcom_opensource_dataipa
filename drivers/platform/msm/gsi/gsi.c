@@ -52,6 +52,15 @@
 #define GSI_MSB(num) ((u32)((num & GSI_MSB_MASK) >> 32))
 #define GSI_LSB(num) ((u32)(num & GSI_LSB_MASK))
 
+#define GSI_INST_RAM_FW_VER_OFFSET			(0)
+#define GSI_INST_RAM_FW_VER_GSI_3_0_OFFSET	(64)
+#define GSI_INST_RAM_FW_VER_HW_MASK			(0xFC00)
+#define GSI_INST_RAM_FW_VER_HW_SHIFT		(10)
+#define GSI_INST_RAM_FW_VER_FLAVOR_MASK		(0x380)
+#define GSI_INST_RAM_FW_VER_FLAVOR_SHIFT	(7)
+#define GSI_INST_RAM_FW_VER_FW_MASK			(0x7f)
+#define GSI_INST_RAM_FW_VER_FW_SHIFT		(0)
+
 #define GSI_FC_NUM_WORDS_PER_CHNL_SHRAM		(20)
 #define GSI_FC_STATE_INDEX_SHRAM			(7)
 #define GSI_FC_PENDING_MASK					(0x00080000)
@@ -1396,7 +1405,6 @@ static int __gsi_request_msi_irq(unsigned long msi)
 
 static int __gsi_allocate_msis(void)
 {
-#ifdef CONFIG_GENERIC_MSI_IRQ_DOMAIN
 	int result = 0;
 	struct msi_desc *desc = NULL;
 	size_t size = 0;
@@ -1446,9 +1454,6 @@ err_free_msis:
 	memset(gsi_ctx->msi.allocated, 0, size);
 
 	return result;
-#else
-	return GSI_STATUS_SUCCESS;
-#endif
 }
 
 int gsi_register_device(struct gsi_per_props *props, unsigned long *dev_hdl)
@@ -1744,9 +1749,7 @@ err_free_msis:
 	if (gsi_ctx->msi.num) {
 		size_t size =
 			sizeof(unsigned long) * BITS_TO_LONGS(gsi_ctx->msi.num);
-#ifdef CONFIG_GENERIC_MSI_IRQ_DOMAIN
 		platform_msi_domain_free_irqs(gsi_ctx->dev);
-#endif
 		memset(gsi_ctx->msi.allocated, 0, size);
 	}
 
@@ -1853,10 +1856,8 @@ int gsi_deregister_device(unsigned long dev_hdl, bool force)
 	__gsi_config_glob_irq(gsi_ctx->per.ee, ~0, 0);
 	__gsi_config_gen_irq(gsi_ctx->per.ee, ~0, 0);
 
-#ifdef CONFIG_GENERIC_MSI_IRQ_DOMAIN
 	if (gsi_ctx->msi.num)
 		platform_msi_domain_free_irqs(gsi_ctx->dev);
-#endif
 
 	devm_free_irq(gsi_ctx->dev, gsi_ctx->per.irq, gsi_ctx);
 	gsi_unmap_base();
@@ -2734,11 +2735,9 @@ static void gsi_program_chan_ctx(struct gsi_chan_props *props, unsigned int ee,
 		break;
 	case GSI_CHAN_PROT_AQC:
 	case GSI_CHAN_PROT_11AD:
-	case GSI_CHAN_PROT_MHIC:
 	case GSI_CHAN_PROT_RTK:
 	case GSI_CHAN_PROT_QDSS:
 	case GSI_CHAN_PROT_NTN:
-	case GSI_CHAN_PROT_WDI3M:
 		ch_k_cntxt_0.chtype_protocol_msb = 1;
 		break;
 	default:
@@ -2910,9 +2909,9 @@ int gsi_alloc_channel(struct gsi_chan_props *props, unsigned long dev_hdl,
 	}
 	memset(ctx, 0, sizeof(*ctx));
 
-	/* For IPA offloaded WDI/RTK/XDCI channels not required user_data pointer */
-	if (props->prot == GSI_CHAN_PROT_GPI ||
-		props->prot == GSI_CHAN_PROT_GCI)
+	/* For IPA offloaded WDI channels not required user_data pointer */
+	if (props->prot != GSI_CHAN_PROT_WDI2 &&
+		props->prot != GSI_CHAN_PROT_WDI3)
 		user_data_size = props->ring_len / props->re_size;
 	else
 		user_data_size = props->re_size;
@@ -2987,7 +2986,8 @@ int gsi_alloc_channel(struct gsi_chan_props *props, unsigned long dev_hdl,
 			atomic_inc(&ctx->evtr->chan_ref_cnt);
 			if (ctx->evtr->props.exclusive) {
 				if (atomic_read(&ctx->evtr->chan_ref_cnt) == 1)
-					ctx->evtr->chan[ctx->evtr->num_of_chan_allocated++] = ctx;
+					ctx->evtr->chan
+					[ctx->evtr->num_of_chan_allocated++] = ctx;
 			}
 			else {
 				ctx->evtr->chan[ctx->evtr->num_of_chan_allocated++]
@@ -3011,8 +3011,6 @@ int gsi_alloc_channel(struct gsi_chan_props *props, unsigned long dev_hdl,
 	if (props->prot == GSI_CHAN_PROT_GCI) {
 		gsi_ctx->coal_info.ch_id = props->ch_id;
 		gsi_ctx->coal_info.evchid = props->evt_ring_hdl;
-		GSIDBG("GSI coal ch = %d, ev id %d\n",
-			props->ch_id, props->evt_ring_hdl);
 	}
 
 	return GSI_STATUS_SUCCESS;
